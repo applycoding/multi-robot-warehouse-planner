@@ -27,5 +27,5 @@ jobs:
       - uses: actions/checkout@v7
       - run: docker build -t mrwp .
       - run: docker run -d -p 8000:8000 --name mrwp-test mrwp
-      - run: curl --retry 5 --retry-connrefused http://localhost:8000/healthz
+      - run: curl --retry 5 --retry-connrefused http://127.0.0.1:8000/healthz
       - run: docker stop mrwp-test

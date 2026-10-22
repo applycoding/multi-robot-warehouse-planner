@@ -113,6 +113,7 @@ def _low_level(
     goal: Coord,
     constraints: ConstraintTable,
     horizon: int,
+    max_consecutive_wait: int | None,
     deadline: float | None = None,
     clock: Clock = time.monotonic,
 ) -> list[Coord] | None:
@@ -125,7 +126,7 @@ def _low_level(
         constraints,
         horizon,
         blocked=blocked,
-        max_consecutive_wait=1,
+        max_consecutive_wait=max_consecutive_wait,
         deadline=deadline,
         clock=clock,
     )
@@ -151,6 +152,7 @@ def cbs_plan(
     agents: dict[str, tuple[Coord, Coord]],
     node_cap: int = 400,
     time_budget_s: float = 0.3,
+    max_consecutive_wait: int | None = 1,
     clock: Clock = time.monotonic,
 ) -> CBSResult:
     global _hl_counter
@@ -169,7 +171,16 @@ def cbs_plan(
         if clock() > deadline:
             return CBSResult(None, "timeout", nodes_expanded, conflicts_resolved, None)
         p = _low_level(
-            grid, blocked, aid, start, goal, root_constraints, horizon, deadline, clock
+            grid,
+            blocked,
+            aid,
+            start,
+            goal,
+            root_constraints,
+            horizon,
+            max_consecutive_wait,
+            deadline,
+            clock,
         )
         if p is None:
             return CBSResult(None, "low_level_failed", nodes_expanded, conflicts_resolved, None)
@@ -245,7 +256,16 @@ def cbs_plan(
             new_paths = dict(node.paths)
             start, goal = agents[agent]
             p = _low_level(
-                grid, blocked, agent, start, goal, new_constraints, horizon, deadline, clock
+                grid,
+                blocked,
+                agent,
+                start,
+                goal,
+                new_constraints,
+                horizon,
+                max_consecutive_wait,
+                deadline,
+                clock,
             )
             if p is None:
                 nodes_expanded += 1

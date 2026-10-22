@@ -197,16 +197,22 @@ class SimulationEngine:
         return None
 
     def _connectivity_ok(self, blocked: set[Coord]) -> bool:
-        corridors = [
+        operational = {
+            CellType.CORRIDOR,
+            CellType.SHELF_ACCESS,
+            CellType.PICK_STATION,
+            CellType.CHARGER,
+            CellType.PARKING,
+        }
+        cells = [
             c
             for c, t in self.grid.cell_types.items()
-            if t is CellType.CORRIDOR and c not in blocked
+            if t in operational and c not in blocked
         ]
-        if not corridors:
+        if not cells:
             return False
-        start = corridors[0]
-        seen = self.grid.reachable(start, blocked)
-        return len(seen) == len(corridors)
+        seen = self.grid.reachable(cells[0], blocked)
+        return all(c in seen for c in cells)
 
     def try_block_cell_api(self, row: int, col: int, blocked: bool) -> str | None:
         """Return error string or None on success (queued)."""
@@ -404,7 +410,7 @@ class SimulationEngine:
             agents,
             self.committed_paths if self.committed_paths else None,
             seed=self.seed + self.tick,
-            time_budget_s=1.0,
+            time_budget_s=0.3,
         )
         planning_ms = (time.monotonic() - t0) * 1000.0
         aligned: dict[str, list[Coord]] = {}
@@ -465,6 +471,26 @@ class SimulationEngine:
             nxt[r.robot_id] = path[idx] if path else r.position
         return nxt
 
+    def _made_progress(self, robot: Robot, old_pos: Coord) -> bool:
+        if robot.goal and robot.position == robot.goal:
+            return True
+        path = self.committed_paths.get(robot.robot_id, [])
+        if path and old_pos in path:
+            idx = path.index(old_pos)
+            if robot.position == old_pos:
+                return False
+            if idx + 1 < len(path) and robot.position == path[idx + 1]:
+                return True
+            if robot.position in path[: idx + 2]:
+                return True
+        if robot.goal:
+            dist = self.grid.bfs_distances(robot.goal)
+            before = dist.get(old_pos, 10**6)
+            after = dist.get(robot.position, 10**6)
+            if after < before:
+                return True
+        return False
+
     def _validate_step(self, nxt: dict[str, Coord]) -> bool:
         blocked = set(self.blocked_cells)
         for r in self.robots:
@@ -514,9 +540,10 @@ class SimulationEngine:
                 self.metrics.stalls += 1
                 r.stall_attempts += 1
                 if r.stall_attempts >= 3:
-                    r.status = "deadlocked"
-                    r.goal = r.position
-                    self.metrics.deadlocks += 1
+                    if r.status != "deadlocked":
+                        self.metrics.deadlocks += 1
+                        r.status = "deadlocked"
+                        r.goal = r.position
                 else:
                     blocked = set(self.blocked_cells)
                     r.goal = self._nearest_parking(r.position, blocked)
@@ -559,12 +586,13 @@ class SimulationEngine:
                         self._on_dwell_complete(r)
                     continue
                 target = nxt[r.robot_id]
+                old_pos = r.position
                 moved = target != r.position
                 r.position = target
                 if moved:
                     r.battery_pct = apply_move_drain(r.battery_pct)
                     self.metrics.record_move()
-                    if r.goal and r.position == r.goal:
+                    if self._made_progress(r, old_pos):
                         r.ticks_without_progress = 0
                     else:
                         r.ticks_without_progress += 1

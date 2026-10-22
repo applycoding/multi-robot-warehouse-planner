@@ -88,32 +88,34 @@ def space_time_astar(
     closed: set[tuple[Coord, int]] = set()
 
     goal_latest = constraints.latest_goal_constraint(agent, goal)
-    best_goal_path: list[Coord] | None = None
-    best_goal_cost: int | None = None
+
+    def can_remain_at_goal(k: int) -> bool:
+        for kk in range(k + 1, max_k + 1):
+            if (agent, goal, kk) in constraints.vertex:
+                return False
+        return True
 
     expansions = 0
     while open_heap:
         if deadline is not None and clock() > deadline:
-            return best_goal_path
+            return None
         expansions += 1
         if expansions % 64 == 0 and deadline is not None and clock() > deadline:
-            return best_goal_path
+            return None
         f, g, _, cell, k = heapq.heappop(open_heap)
         state = (cell, k)
         if state in closed:
             continue
         closed.add(state)
 
-        if cell == goal and k > goal_latest:
+        if cell == goal and k > goal_latest and can_remain_at_goal(k):
             path: list[Coord] = []
             cur: tuple[Coord, int] | None = state
             while cur is not None:
                 path.append(cur[0])
                 cur = parent[cur]
             path.reverse()
-            if best_goal_cost is None or g < best_goal_cost:
-                best_goal_cost = g
-                best_goal_path = path
+            return path
 
         if k >= max_k:
             continue
@@ -149,7 +151,7 @@ def space_time_astar(
             heapq.heappush(open_heap, (ng + h(nxt), ng, counter, nxt, nk))
             counter += 1
 
-    return best_goal_path
+    return None
 
 
 def path_soc(path: list[Coord], goal: Coord) -> int:

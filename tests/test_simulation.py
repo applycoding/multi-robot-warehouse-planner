@@ -17,6 +17,23 @@ def test_battery_drain_and_charge() -> None:
     eng.step()
     assert r.battery_pct == before - 0.5
 
+    rows = [
+        "#######",
+        "#C....#",
+        "#H....#",
+        "#######",
+    ]
+    eng2 = SimulationEngine(map_rows=rows, robot_count=1, seed=1, auto_orders=False)
+    eng2.robots[0].position = (2, 1)
+    eng2.debug_set_battery("r1", 15.0)
+    eng2._replan_queued = True
+    for _ in range(80):
+        eng2.step()
+        if eng2.robots[0].battery_pct >= 100.0:
+            break
+    assert eng2.robots[0].battery_pct >= 100.0
+    assert eng2.robots[0].status == "charging"
+
 
 def test_order_lifecycle() -> None:
     rows = [
@@ -74,13 +91,18 @@ def test_pocketless_swap_hold_and_stall() -> None:
     positions_by_tick: dict[int, dict[str, tuple[int, int]]] = {}
     blocked_by_tick: dict[int, set[tuple[int, int]]] = {t: set() for t in range(200)}
     saw_hold = False
+    first_stall_tick: int | None = None
     for t in range(200):
         frame = eng.step()
         if frame["planner_used"] == "hold":
             saw_hold = True
+        if first_stall_tick is None and eng.metrics.stalls >= 1:
+            first_stall_tick = t
         positions_by_tick[t] = {rb["id"]: tuple(rb["pos"]) for rb in frame["robots"]}
     assert saw_hold
     assert eng.metrics.stalls >= 1
+    assert first_stall_tick is not None
+    assert 14 <= first_stall_tick <= 20
     assert validate_trajectory(eng.grid, positions_by_tick, blocked_by_tick) == []
 
 

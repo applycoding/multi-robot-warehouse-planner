@@ -35,21 +35,11 @@ class ClientState:
 async def lifespan(app: FastAPI):
     seed = int(os.environ.get("SIM_SEED", "1"))
     autostart = os.environ.get("SIM_AUTOSTART", "1") != "0"
-    if os.environ.get("E2E_SIMPLE_MAP") == "1":
-        map_rows = ["#######", "#.....#", "#.....#", "#.....#", "#######"]
-        engine = SimulationEngine(
-            map_rows=map_rows,
-            seed=seed,
-            auto_orders=False,
-            robot_count=4,
-            robot_starts=[(1, 1), (1, 2), (1, 4), (1, 5)],
-        )
-    else:
-        engine = SimulationEngine(
-            map_rows=DEFAULT_MAP,
-            seed=seed,
-            auto_orders=True,
-        )
+    engine = SimulationEngine(
+        map_rows=DEFAULT_MAP,
+        seed=seed,
+        auto_orders=True,
+    )
     engine.playing = autostart
     app.state.engine = engine
     app.state.clients: list[ClientState] = []

@@ -72,7 +72,7 @@ flowchart LR
 
 ## How it works
 
-Each tick, the simulation may allocate pending orders, then runs a full joint replan through the planner chain: CBS (400 node cap, 300 ms budget), prioritized planning with several robot orderings, then HOLD if needed. Space-time A* respects vertex and edge constraints, including the goal-cell constraint fix for target conflicts. The engine executes one step of the committed plan and validates collisions before applying motion.
+Each tick, the simulation may allocate pending orders, then runs a full joint replan through the planner chain: CBS (400 node cap, 45% of the 300 ms budget), prioritized planning with several robot orderings (remaining budget), then HOLD if needed. Space-time A* respects vertex and edge constraints, including the goal-cell constraint fix for target conflicts, and stops at the first valid goal arrival. The engine executes one step of the committed plan and validates collisions before applying motion.
 
 ## Tests
 
@@ -99,11 +99,11 @@ This repo does not use ROS 2 or Open-RMF. Conceptual analogies only:
 
 ## Deviations from PLAN.md
 
-- CBS and prioritized low-level search cap consecutive wait steps to one tick off-goal (`max_consecutive_wait=1`) so target-conflict CBS matches the reference leave-and-return behavior and siding swaps remain feasible.
-- Crossing SOC unit test uses a 3x3 grid with hand-verified optimal SOC `6` under that wait cap (brute-force joint BFS on the same cap is slower to align for detour paths).
-- The simulation engine calls the planner chain with a 1.0 s budget (API/tests still use the 0.3 s default) so prioritized planning has time to run after CBS on busy maps.
-- Playwright e2e boots a small open grid (`E2E_SIMPLE_MAP`) so blocking a corridor cell is allowed; the default map rejects most aisle clicks as disconnecting.
+- `cbs_plan` defaults to `max_consecutive_wait=1` for the PLAN target-conflict unit test; the simulation planner chain and oracle regression call CBS with `max_consecutive_wait=None`.
+- Crossing SOC unit test uses a 3x3 grid with hand-verified optimal SOC `6` (brute-force joint BFS on detour-rich paths is slower to align).
+- CBS is capped to 45% of the wall-clock planner budget so prioritized planning always receives a reserved share before HOLD.
 - While paused, the tick loop applies queued REST commands (play/pause/block) without advancing simulation ticks so the UI can resume.
+- CI docker health check uses `127.0.0.1` and a short startup wait before `curl`.
 
 ## License
 

@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Multi-Robot Warehouse Planner</title>
+  <link rel="stylesheet" href="/static/style.css" />
+</head>
+<body>
+  <header>
+    <h1>Multi-Robot Warehouse Planner</h1>
+    <p class="subtitle">CPU-only MAPF simulation demo</p>
+  </header>
+  <main>
+    <section class="canvas-wrap">
+      <canvas id="grid" width="960" height="560"></canvas>
+      <p id="error" class="error" hidden></p>
+    </section>
+    <aside class="panel">
+      <div class="row">
+        <button id="play-btn" type="button">Play</button>
+        <button id="pause-btn" type="button">Pause</button>
+        <label>Speed <input id="speed" type="range" min="0.25" max="8" step="0.25" value="1" /></label>
+      </div>
+      <div class="row">
+        <label>Robots <input id="robot-count" type="number" min="4" max="12" value="8" /></label>
+        <button id="add-order" type="button">Add order</button>
+        <button id="reset-btn" type="button">Reset</button>
+      </div>
+      <div class="row">
+        <label>Allocator
+          <select id="allocator">
+            <option value="greedy">Greedy FCFS</option>
+            <option value="optimal">Optimal (scipy)</option>
+          </select>
+        </label>
+      </div>
+      <p data-testid="tick-counter">Tick: <span id="tick-val">0</span></p>
+      <h2>Metrics</h2>
+      <ul id="metrics"></ul>
+    </aside>
+  </main>
+  <script src="/static/app.js"></script>
+</body>
+</html>

@@ -54,7 +54,8 @@ def plan_joint(
     clock: Clock = time.monotonic,
 ) -> PlanResult:
     t0 = clock()
-    cbs_share = 0.45
+    n_agents = len(agents)
+    cbs_share = 0.45 if n_agents <= 5 else 0.65
     cbs_budget = time_budget_s * cbs_share
     cbs = cbs_plan(
         grid,
@@ -72,7 +73,7 @@ def plan_joint(
     agent_ids = sorted(agents.keys())
     orders: list[list[str]] = [agent_ids, list(reversed(agent_ids))]
     rng = random.Random(seed)
-    for _ in range(3):
+    for _ in range(6):
         shuffled = list(agent_ids)
         rng.shuffle(shuffled)
         orders.append(shuffled)

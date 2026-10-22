@@ -283,6 +283,41 @@ class SimulationEngine:
                 extra.add(r.position)
         return frozenset(extra)
 
+    def _is_stationary_for_planning(self, robot: Robot) -> bool:
+        if robot.status in ("blocked", "deadlocked", "charging"):
+            return True
+        if robot.dwell_remaining > 0 or robot.status == "dwelling":
+            return True
+        if (
+            not robot.current_order_id
+            and robot.leg in ("idle", "parking")
+            and (robot.goal is None or robot.position == robot.goal)
+        ):
+            return True
+        return False
+
+    def _planning_context(self) -> tuple[dict[str, tuple[Coord, Coord]], frozenset[Coord]]:
+        blocked = set(self.blocked_cells)
+        agents: dict[str, tuple[Coord, Coord]] = {}
+        for r in self.robots:
+            if r.battery_pct <= 0 or r.status == "blocked":
+                blocked.add(r.position)
+                agents[r.robot_id] = (r.position, r.position)
+                continue
+            if self._is_stationary_for_planning(r):
+                blocked.add(r.position)
+                continue
+            if r.status == "deadlocked":
+                agents[r.robot_id] = (r.position, r.position)
+                continue
+            goal = r.goal if r.goal is not None else r.position
+            agents[r.robot_id] = (r.position, goal)
+        return agents, frozenset(blocked)
+
+    def _replan_time_budget_s(self) -> float:
+        extra = max(0, self.robot_count - 4)
+        return min(1.5, 0.3 + 0.1 * extra)
+
     def _assign_goals(self) -> dict[str, tuple[Coord, Coord]]:
         agents: dict[str, tuple[Coord, Coord]] = {}
         for r in self.robots:
@@ -402,15 +437,17 @@ class SimulationEngine:
     def _replan(self) -> None:
         self._regoal_unreachable()
         self._update_idle_goals()
-        agents = self._assign_goals()
+        agents, plan_blocked = self._planning_context()
+        if not agents:
+            return
         t0 = time.monotonic()
         result = plan_joint(
             self.grid,
-            self._static_blocked(),
+            plan_blocked,
             agents,
             self.committed_paths if self.committed_paths else None,
             seed=self.seed + self.tick,
-            time_budget_s=0.3,
+            time_budget_s=self._replan_time_budget_s(),
         )
         planning_ms = (time.monotonic() - t0) * 1000.0
         aligned: dict[str, list[Coord]] = {}
@@ -435,6 +472,9 @@ class SimulationEngine:
                 padded[rid] = path + [tail] * (min_len - len(path))
             else:
                 padded[rid] = path
+        for r in self.robots:
+            if r.robot_id not in padded:
+                padded[r.robot_id] = [r.position]
         self.committed_paths = padded
         self.plan_start_tick = self.tick
         self.planner_used = result.planner_used
@@ -519,9 +559,16 @@ class SimulationEngine:
         for r in self.robots:
             if r.status in ("deadlocked", "blocked"):
                 continue
-            if self.planner_used == "hold":
+            if (
+                self.planner_used == "hold"
+                and r.waited_this_tick
+                and r.current_order_id
+                and r.goal
+                and r.goal != r.position
+                and r.dwell_remaining == 0
+            ):
                 r.hold_streak += 1
-            else:
+            elif self.planner_used != "hold":
                 r.hold_streak = 0
 
             stalled = False
@@ -577,9 +624,11 @@ class SimulationEngine:
         if not self._validate_step(nxt):
             for r in self.robots:
                 nxt[r.robot_id] = r.position
+                r.waited_this_tick = True
             self._replan_queued = True
         else:
             for r in self.robots:
+                r.waited_this_tick = False
                 if r.dwell_remaining > 0:
                     r.dwell_remaining -= 1
                     if r.dwell_remaining == 0:
@@ -597,6 +646,7 @@ class SimulationEngine:
                     else:
                         r.ticks_without_progress += 1
                 else:
+                    r.waited_this_tick = True
                     on_charger = self.grid.cell_types.get(r.position) is CellType.CHARGER
                     if r.status == "charging" or on_charger:
                         if r.leg in ("charging", "to_charger") and r.position == r.goal:

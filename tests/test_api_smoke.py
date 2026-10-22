@@ -20,7 +20,6 @@ def server_url() -> str:
     env = os.environ.copy()
     env["SIM_SEED"] = "1"
     env["SIM_AUTOSTART"] = "0"
-    env["E2E_SIMPLE_MAP"] = "1"
     proc = subprocess.Popen(
         [
             sys.executable,
@@ -63,7 +62,7 @@ def test_ui_smoke(page: Page, server_url: str) -> None:
     cell_px = page.evaluate("window.__cellPx")
     assert cell_px > 0
     page.locator("#pause-btn").click()
-    block_row, block_col = 2, 3
+    block_row, block_col = 5, 10
     page.locator("canvas").click(
         position={
             "x": block_col * cell_px + cell_px // 2,

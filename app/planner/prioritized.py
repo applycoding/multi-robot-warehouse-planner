@@ -60,7 +60,6 @@ def prioritized_plan(
             constraints,
             horizon,
             blocked=blocked,
-            max_consecutive_wait=1,
             deadline=deadline,
             clock=clock,
         )
@@ -84,7 +83,6 @@ def prioritized_plan(
                 constraints,
                 horizon,
                 blocked=blocked,
-                max_consecutive_wait=1,
                 deadline=deadline,
                 clock=clock,
             )

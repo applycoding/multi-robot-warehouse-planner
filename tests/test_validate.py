@@ -26,3 +26,24 @@ def test_validate_trajectory_swap() -> None:
     }
     violations = validate_trajectory(grid, positions, {0: set(), 1: set()})
     assert violations
+
+
+def test_validate_joint_plan_detects_last_agent_jump() -> None:
+    grid = grid_from_rows(["....."])
+    paths = {"A": [(0, 2), (0, 2)], "B": [(0, 0), (0, 4)]}
+    violations = validate_joint_plan(grid, paths)
+    assert any("B" in v and "more than one" in v for v in violations)
+
+
+def test_validate_joint_plan_single_agent_jump() -> None:
+    grid = grid_from_rows(["....."])
+    paths = {"A": [(0, 0), (0, 4)]}
+    violations = validate_joint_plan(grid, paths)
+    assert violations
+
+
+def test_validate_trajectory_single_agent_jump() -> None:
+    grid = grid_from_rows(["....."])
+    positions = {0: {"A": (0, 0)}, 1: {"A": (0, 4)}}
+    violations = validate_trajectory(grid, positions, {0: set(), 1: set()})
+    assert violations

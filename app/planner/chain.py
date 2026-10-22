@@ -54,8 +54,16 @@ def plan_joint(
     clock: Clock = time.monotonic,
 ) -> PlanResult:
     t0 = clock()
+    cbs_share = 0.45
+    cbs_budget = time_budget_s * cbs_share
     cbs = cbs_plan(
-        grid, blocked, agents, node_cap=node_cap, time_budget_s=time_budget_s, clock=clock
+        grid,
+        blocked,
+        agents,
+        node_cap=node_cap,
+        time_budget_s=cbs_budget,
+        max_consecutive_wait=None,
+        clock=clock,
     )
     if cbs.reason == "solved" and cbs.paths is not None:
         planning_ms = (clock() - t0) * 1000.0
@@ -69,18 +77,19 @@ def plan_joint(
         rng.shuffle(shuffled)
         orders.append(shuffled)
 
+    pp_deadline = t0 + time_budget_s
     for order in orders:
-        if clock() - t0 > time_budget_s:
+        if clock() >= pp_deadline:
             break
         pp = prioritized_plan(
             grid,
             blocked,
             agents,
             order,
-            time_budget_s=max(0.01, time_budget_s - (clock() - t0)),
+            time_budget_s=max(0.01, pp_deadline - clock()),
             clock=clock,
         )
-        if pp is not None and not validate_joint_plan(grid, pp):
+        if pp is not None and not validate_joint_plan(grid, pp, set(blocked)):
             planning_ms = (clock() - t0) * 1000.0
             return PlanResult(pp, "pp", cbs, planning_ms)
 

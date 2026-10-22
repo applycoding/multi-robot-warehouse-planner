@@ -30,8 +30,10 @@ def validate_joint_plan(
         if not p:
             violations.append(f"{aid}: empty path")
             continue
-        if p[0] != padded[aid][0]:
-            violations.append(f"{aid}: path does not start at declared start")
+        for i in range(1, len(p)):
+            a, b = p[i - 1], p[i]
+            if abs(a[0] - b[0]) + abs(a[1] - b[1]) > 1:
+                violations.append(f"{aid}: invalid step in path at index {i}")
 
     for k in range(max_len):
         positions: dict[str, Coord] = {aid: padded[aid][k] for aid in ids}
@@ -47,17 +49,19 @@ def validate_joint_plan(
 
         if k > 0:
             prev = {aid: padded[aid][k - 1] for aid in ids}
+            for a in ids:
+                ca, pa = positions[a], prev[a]
+                if ca != pa:
+                    dr = abs(ca[0] - pa[0])
+                    dc = abs(ca[1] - pa[1])
+                    if dr + dc > 1:
+                        violations.append(f"{a} moved more than one cell at tick {k}")
             for i, a in enumerate(ids):
                 for b in ids[i + 1 :]:
                     ca, cb = positions[a], positions[b]
                     pa, pb = prev[a], prev[b]
                     if ca == pb and cb == pa and ca != cb:
                         violations.append(f"swap conflict at tick {k} between {a} and {b}")
-                    if ca != pa:
-                        dr = abs(ca[0] - pa[0])
-                        dc = abs(ca[1] - pa[1])
-                        if dr + dc > 1:
-                            violations.append(f"{a} moved more than one cell at tick {k}")
 
     return violations
 
@@ -88,16 +92,22 @@ def validate_trajectory(
         if k > 0 and (k - 1) in positions_by_tick:
             prev = positions_by_tick[k - 1]
             ids = sorted(positions.keys())
+            for a in ids:
+                if a not in prev:
+                    continue
+                ca, pa = positions[a], prev[a]
+                if ca != pa:
+                    dr = abs(ca[0] - pa[0])
+                    dc = abs(ca[1] - pa[1])
+                    if dr + dc > 1:
+                        violations.append(f"{a} jumped at tick {k}")
             for i, a in enumerate(ids):
                 for b in ids[i + 1 :]:
+                    if a not in prev or b not in prev:
+                        continue
                     ca, cb = positions[a], positions[b]
                     pa, pb = prev[a], prev[b]
                     if ca == pb and cb == pa and ca != cb:
                         violations.append(f"swap at tick {k}")
-                    if ca != pa:
-                        dr = abs(ca[0] - pa[0])
-                        dc = abs(ca[1] - pa[1])
-                        if dr + dc > 1:
-                            violations.append(f"{a} jumped at tick {k}")
 
     return violations

@@ -59,7 +59,9 @@ def test_heap_same_soc_no_type_error() -> None:
         "B": ((1, 0), (1, 6)),
         "C": ((2, 0), (2, 6)),
     }
-    cbs_plan(grid, frozenset(), agents, node_cap=5)
+    res = cbs_plan(grid, frozenset(), agents, node_cap=5)
+    assert res.reason in {"solved", "node_cap", "timeout"}
+    assert res.nodes_expanded <= 5
 
 
 def test_timeout_injected_clock() -> None:

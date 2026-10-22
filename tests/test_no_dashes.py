@@ -1,20 +1,24 @@
+import subprocess
 from pathlib import Path
 
 TRACKED_ROOT = Path(__file__).resolve().parent.parent
-SKIP = {".git"}
 
 
 def _iter_files() -> list[Path]:
-    out: list[Path] = []
-    for path in TRACKED_ROOT.rglob("*"):
+    out = subprocess.check_output(
+        ["git", "ls-files"],
+        cwd=TRACKED_ROOT,
+        text=True,
+    ).splitlines()
+    paths: list[Path] = []
+    for rel in out:
+        path = TRACKED_ROOT / rel
         if not path.is_file():
-            continue
-        if any(part in SKIP for part in path.parts):
             continue
         if path.suffix in {".png", ".pyc"}:
             continue
-        out.append(path)
-    return out
+        paths.append(path)
+    return paths
 
 
 def test_no_em_or_en_dash_in_tracked_files() -> None:

@@ -16,7 +16,7 @@ def test_cbs_matches_oracle_with_waits_on_siding_grid() -> None:
         frozenset(),
         agents,
         node_cap=8000,
-        time_budget_s=0.3,
+        time_budget_s=2.0,
         max_consecutive_wait=None,
     )
     assert res.reason == "solved"

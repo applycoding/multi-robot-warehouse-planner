@@ -122,6 +122,7 @@ class Robot:
     goal: Coord | None = None
     dwell_remaining: int = 0
     leg: str = "idle"
+    waited_this_tick: bool = False
 
 
 @dataclass

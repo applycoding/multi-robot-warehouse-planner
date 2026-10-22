@@ -44,9 +44,13 @@ class MetricsCollector:
     def throughput_per_min(self, current_tick: int) -> float:
         if not self.completion_ticks:
             return 0.0
-        window_start = current_tick - 120
+        window_ticks = min(120, current_tick) if current_tick > 0 else 1
+        window_start = current_tick - window_ticks
         count = sum(1 for t in self.completion_ticks if t > window_start)
-        return count * 2.0
+        if count == 0 and self.throughput_total > 0:
+            count = self.throughput_total
+            window_ticks = max(current_tick, 1)
+        return count * (120.0 / window_ticks) * 2.0
 
     def planning_time_p95_ms(self) -> float:
         if not self.planning_times:

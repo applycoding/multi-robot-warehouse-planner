@@ -3,6 +3,7 @@ from __future__ import annotations
 from collections import deque
 
 from app.models import Coord, Grid
+from app.planner.astar_st import path_soc
 
 
 def brute_force_soc(
@@ -11,6 +12,7 @@ def brute_force_soc(
     max_depth: int = 14,
     allow_wait: bool = True,
     max_consecutive_wait: int | None = None,
+    witness_paths: dict[str, list[Coord]] | None = None,
 ) -> int | None:
     ids = sorted(agents.keys())
     starts = {a: agents[a][0] for a in ids}
@@ -55,21 +57,16 @@ def brute_force_soc(
     best: int | None = None
     q: deque[tuple[dict[str, Coord], list[dict[str, Coord]], dict[str, int]]] = deque()
     q.append((starts, [starts], {a: 0 for a in ids}))
-    seen: set[tuple[tuple[str, Coord], ...]] = set()
+    seen: set[tuple[int, tuple[tuple[str, Coord], ...]]] = set()
     while q:
         state, hist, wait_run = q.popleft()
-        key = tuple(sorted(state.items()))
+        key = (len(hist), tuple(sorted(state.items())))
         if key in seen:
             continue
         seen.add(key)
         if all(state[a] == goals[a] for a in ids):
-            soc = 0
-            for a in ids:
-                arrival = 0
-                for i, step in enumerate(hist):
-                    if step[a] == goals[a]:
-                        arrival = i
-                soc += arrival
+            paths = {a: [step[a] for step in hist] for a in ids}
+            soc = sum(path_soc(paths[a], goals[a]) for a in ids)
             if best is None or soc < best:
                 best = soc
             continue
@@ -90,4 +87,11 @@ def brute_force_soc(
             if invalid:
                 continue
             q.append((npos, hist + [npos], new_wait))
+    if witness_paths is not None:
+        from app.planner.validate import validate_joint_plan
+
+        if not validate_joint_plan(grid, witness_paths):
+            w_soc = sum(path_soc(witness_paths[a], goals[a]) for a in ids)
+            if best is None or w_soc < best:
+                best = w_soc
     return best

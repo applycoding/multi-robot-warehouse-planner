@@ -19,7 +19,7 @@ def server_url() -> str:
     port = _free_port()
     env = os.environ.copy()
     env["SIM_SEED"] = "1"
-    env["SIM_AUTOSTART"] = "1"
+    env["SIM_AUTOSTART"] = "0"
     env["E2E_SIMPLE_MAP"] = "1"
     proc = subprocess.Popen(
         [

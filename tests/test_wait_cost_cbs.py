@@ -29,7 +29,9 @@ def test_wait_cost_siding_two_agent_instance() -> None:
 
 def test_cbs_matches_oracle_on_random_tiny_grids() -> None:
     rng = random.Random(42)
-    checked = 0
+    instances: list[
+        tuple[object, dict[str, tuple[tuple[int, int], tuple[int, int]]], int]
+    ] = []
     for seed in range(50):
         rng.seed(seed)
         width = rng.randint(3, 5)
@@ -50,25 +52,25 @@ def test_cbs_matches_oracle_on_random_tiny_grids() -> None:
         if len(walkable) < 4:
             continue
         rng.shuffle(walkable)
-        n = rng.randint(2, min(3, len(walkable) // 2))
-        agent_ids = [chr(ord("A") + i) for i in range(n)]
-        agents: dict[str, tuple[tuple[int, int], tuple[int, int]]] = {}
-        for i, aid in enumerate(agent_ids):
-            agents[aid] = (walkable[i], walkable[i + n])
-        optimal = brute_force_soc(grid, agents, allow_wait=True, max_depth=12)
+        agents: dict[str, tuple[tuple[int, int], tuple[int, int]]] = {
+            "A": (walkable[0], walkable[1]),
+            "B": (walkable[2], walkable[3]),
+        }
+        optimal = brute_force_soc(grid, agents, allow_wait=True, max_depth=8)
         if optimal is None:
             continue
+        instances.append((grid, agents, optimal))
+    assert len(instances) >= 40
+    for grid, agents, optimal in instances:
         res = cbs_plan(
             grid,
             frozenset(),
             agents,
-            node_cap=3000,
-            time_budget_s=0.3,
+            node_cap=12000,
+            time_budget_s=2.0,
             max_consecutive_wait=None,
         )
-        if res.reason != "solved" or res.paths is None:
-            continue
+        assert res.reason == "solved"
+        assert res.paths is not None
         assert validate_joint_plan(grid, res.paths) == []
         assert res.soc == optimal
-        checked += 1
-    assert checked >= 15

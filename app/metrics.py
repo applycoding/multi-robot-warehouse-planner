@@ -17,10 +17,12 @@ class MetricsCollector:
         self.deadlocks = 0
         self.last_makespan = 0
         self.last_soc = 0
+        self.last_completion_tick = 0
 
     def record_completion(self, tick: int) -> None:
         self.throughput_total += 1
         self.completion_ticks.append(tick)
+        self.last_completion_tick = tick
 
     def record_move(self) -> None:
         self.cumulative_moves += 1

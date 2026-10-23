@@ -401,12 +401,150 @@ class SimulationEngine:
                     r.leg = "to_charger"
             elif r.leg == "charging" and r.battery_pct >= CHARGE_COMPLETE_THRESHOLD:
                 r.leg = "idle"
+                r.status = "idle"
                 r.goal = self._nearest_parking(r.position, blocked)
             elif r.leg not in ("charging", "to_charger", "debug"):
                 pk = self._nearest_parking(r.position, blocked)
                 if r.position != pk:
                     r.goal = pk
                     r.leg = "to_parking"
+
+    def _on_charger_cell(self, cell: Coord) -> bool:
+        return self.grid.cell_types.get(cell) is CellType.CHARGER
+
+    def _finish_charging_if_ready(self, r: Robot) -> None:
+        if r.battery_pct < CHARGE_COMPLETE_THRESHOLD:
+            return
+        if r.leg != "charging" and r.status != "charging":
+            return
+        if not self._on_charger_cell(r.position):
+            return
+        blocked = set(self.blocked_cells)
+        r.leg = "idle"
+        r.status = "idle"
+        pk = self._nearest_parking(r.position, blocked)
+        if r.position != pk:
+            r.goal = pk
+            r.leg = "to_parking"
+        else:
+            r.goal = pk
+        self._replan_queued = True
+
+    def _cancel_stale_unassigned_orders(self) -> None:
+        for o in self.orders:
+            if o.completed_tick is not None or o.assigned_robot_id is not None:
+                continue
+            if self.tick - o.created_tick < 80:
+                continue
+            o.completed_tick = self.tick
+            self._replan_queued = True
+
+    def _fleet_unfreeze_watchdog(self) -> None:
+        last = self.metrics.last_completion_tick
+        if last <= 0 or self.tick - last < 55:
+            return
+        for r in self.robots:
+            if not r.current_order_id:
+                continue
+            if r.consecutive_wait_ticks < 6 and r.ticks_without_progress < 25:
+                continue
+            for o in self.orders:
+                if o.order_id == r.current_order_id:
+                    o.assigned_robot_id = None
+                    o.pick_station = None
+                    o.picked_tick = None
+                    break
+            r.current_order_id = None
+            r.stall_attempts = 0
+            r.ticks_without_progress = 0
+            r.hold_streak = 0
+            r.consecutive_wait_ticks = 0
+            blocked = set(self.blocked_cells)
+            if r.battery_pct < LOW_BATTERY_THRESHOLD:
+                ch = self._free_charger(r.position, blocked)
+                if ch:
+                    r.goal = ch
+                    r.leg = "to_charger"
+                    r.status = "moving"
+                    continue
+            pk = self._nearest_parking(r.position, blocked)
+            r.goal = pk
+            r.leg = "to_parking" if r.position != pk else "idle"
+            r.status = "idle"
+            self._replan_queued = True
+
+    def _release_stale_order_assignments(self) -> None:
+        blocked = set(self.blocked_cells)
+        for r in self.robots:
+            if not r.current_order_id or r.dwell_remaining > 0:
+                continue
+            if (
+                r.ticks_without_progress < 40
+                and r.hold_streak < 20
+                and r.consecutive_wait_ticks < 35
+            ):
+                continue
+            for o in self.orders:
+                if o.order_id == r.current_order_id:
+                    o.assigned_robot_id = None
+                    o.pick_station = None
+                    o.picked_tick = None
+                    break
+            r.current_order_id = None
+            r.stall_attempts = 0
+            r.ticks_without_progress = 0
+            r.hold_streak = 0
+            r.consecutive_wait_ticks = 0
+            if r.battery_pct < LOW_BATTERY_THRESHOLD:
+                ch = self._free_charger(r.position, blocked)
+                if ch:
+                    r.goal = ch
+                    r.leg = "to_charger"
+                    r.status = "moving"
+                    continue
+            pk = self._nearest_parking(r.position, blocked)
+            r.goal = pk
+            r.leg = "to_parking" if r.position != pk else "idle"
+            r.status = "idle"
+            self._replan_queued = True
+
+    def _recover_deadlocked_robots(self) -> None:
+        blocked = set(self.blocked_cells)
+        for r in self.robots:
+            if r.status != "deadlocked":
+                continue
+            if r.deadlock_recover_at is None or self.tick < r.deadlock_recover_at:
+                continue
+            r.status = "idle"
+            r.stall_attempts = 0
+            r.ticks_without_progress = 0
+            r.hold_streak = 0
+            r.deadlock_recover_at = None
+            r.recovery_grace_until = self.tick + 45
+            if (
+                self._on_charger_cell(r.position)
+                and r.battery_pct < CHARGE_COMPLETE_THRESHOLD
+            ):
+                r.goal = r.position
+                r.leg = "charging"
+                r.status = "charging"
+            elif r.current_order_id:
+                o = next(
+                    (o for o in self.orders if o.order_id == r.current_order_id),
+                    None,
+                )
+                if o and o.pick_station:
+                    r.goal = o.pick_station
+                    r.leg = "to_station"
+                elif o:
+                    r.goal = o.shelf_cell
+                    r.leg = "to_shelf"
+                r.status = "moving"
+            else:
+                pk = self._nearest_parking(r.position, blocked)
+                r.goal = pk
+                r.leg = "to_parking" if r.position != pk else "idle"
+            self._replan_queued = True
 
     def _free_charger(self, pos: Coord, blocked: set[Coord]) -> Coord | None:
         chargers = cells_of_type(self.grid, CellType.CHARGER)
@@ -562,16 +700,18 @@ class SimulationEngine:
         for r in self.robots:
             if r.status in ("deadlocked", "blocked"):
                 continue
+            if self.tick < r.recovery_grace_until:
+                continue
             if (
-                self.planner_used == "hold"
-                and r.waited_this_tick
+                r.waited_this_tick
                 and r.current_order_id
                 and r.goal
                 and r.goal != r.position
                 and r.dwell_remaining == 0
+                and r.status not in ("charging", "dwelling")
             ):
                 r.hold_streak += 1
-            elif self.planner_used != "hold":
+            elif not r.waited_this_tick:
                 r.hold_streak = 0
 
             stalled = False
@@ -594,9 +734,16 @@ class SimulationEngine:
                         self.metrics.deadlocks += 1
                         r.status = "deadlocked"
                         r.goal = r.position
+                        r.leg = "parking"
+                        r.deadlock_recover_at = self.tick + 25
+                    r.ticks_without_progress = 0
+                    r.hold_streak = 0
                 else:
                     blocked = set(self.blocked_cells)
                     r.goal = self._nearest_parking(r.position, blocked)
+                    r.leg = "to_parking"
+                    if r.status == "charging":
+                        r.status = "idle"
                     if r.current_order_id:
                         for o in self.orders:
                             if o.order_id == r.current_order_id:
@@ -611,6 +758,12 @@ class SimulationEngine:
 
     def step(self) -> dict:
         self._apply_commands()
+        self._recover_deadlocked_robots()
+        for r in self.robots:
+            self._finish_charging_if_ready(r)
+        self._release_stale_order_assignments()
+        self._cancel_stale_unassigned_orders()
+        self._fleet_unfreeze_watchdog()
 
         pending = [
             o for o in self.orders if o.assigned_robot_id is None and o.completed_tick is None
@@ -651,6 +804,7 @@ class SimulationEngine:
                 moved = target != r.position
                 r.position = target
                 if moved:
+                    r.consecutive_wait_ticks = 0
                     r.battery_pct = apply_move_drain(r.battery_pct)
                     self.metrics.record_move()
                     if self._made_progress(r, old_pos):
@@ -659,20 +813,38 @@ class SimulationEngine:
                         r.ticks_without_progress += 1
                 else:
                     r.waited_this_tick = True
-                    on_charger = self.grid.cell_types.get(r.position) is CellType.CHARGER
-                    if r.status == "charging" or on_charger:
-                        if r.leg in ("charging", "to_charger") and r.position == r.goal:
-                            r.battery_pct = apply_charge(r.battery_pct)
-                            r.status = "charging"
-                            r.leg = "charging"
+                    r.consecutive_wait_ticks += 1
+                    on_charger = self._on_charger_cell(r.position)
+                    goal_is_charger = r.goal is not None and self._on_charger_cell(r.goal)
+                    if (
+                        on_charger
+                        and goal_is_charger
+                        and r.leg in ("charging", "to_charger")
+                        and r.position == r.goal
+                    ):
+                        r.battery_pct = apply_charge(r.battery_pct)
+                        r.status = "charging"
+                        r.leg = "charging"
+                    elif r.leg == "to_charger" and r.position == r.goal and not on_charger:
+                        blocked = set(self.blocked_cells)
+                        r.goal = self._nearest_parking(r.position, blocked)
+                        r.leg = "to_parking" if r.position != r.goal else "idle"
+                        r.status = "idle"
                     if r.goal and r.position == r.goal and r.dwell_remaining == 0:
                         pass
                     elif r.goal and r.goal != r.position:
                         r.ticks_without_progress += 1
 
-                if r.battery_pct <= 0 and r.status != "blocked":
-                    r.status = "blocked"
-                    self._replan_queued = True
+                if r.battery_pct <= 0:
+                    if r.status != "blocked":
+                        r.status = "blocked"
+                        self._replan_queued = True
+                    if self._on_charger_cell(r.position):
+                        r.battery_pct = apply_charge(r.battery_pct)
+                        if r.battery_pct > 0:
+                            r.status = "charging"
+                            r.leg = "charging"
+                            r.goal = r.position
 
                 if r.goal and r.position == r.goal:
                     self._on_reach_goal(r)
@@ -682,11 +854,27 @@ class SimulationEngine:
                 elif r.status == "moving":
                     r.status = "idle"
 
+            for r in self.robots:
+                self._finish_charging_if_ready(r)
+
         self._check_stalls()
 
         if self.auto_orders:
-            active = sum(1 for o in self.orders if o.completed_tick is None)
-            if active < self.robot_count and self.tick % 4 == 0:
+            active_assigned = sum(
+                1
+                for o in self.orders
+                if o.completed_tick is None and o.assigned_robot_id is not None
+            )
+            unassigned_open = sum(
+                1
+                for o in self.orders
+                if o.completed_tick is None and o.assigned_robot_id is None
+            )
+            if (
+                active_assigned < self.robot_count
+                and unassigned_open < 4
+                and self.tick % 4 == 0
+            ):
                 shelf = self._free_shelf()
                 if shelf:
                     self.orders.append(
@@ -708,11 +896,12 @@ class SimulationEngine:
         elif r.leg == "to_station":
             r.status = "dwelling"
             r.dwell_remaining = 2
-        elif r.leg == "to_charger":
+        elif r.leg == "to_charger" and self._on_charger_cell(r.position):
             r.leg = "charging"
             r.status = "charging"
         elif r.leg in ("to_parking", "parking", "idle", "debug"):
-            r.status = "idle"
+            if r.status != "deadlocked":
+                r.status = "idle"
 
     def _on_dwell_complete(self, r: Robot) -> None:
         if r.leg == "to_shelf" and r.current_order_id:

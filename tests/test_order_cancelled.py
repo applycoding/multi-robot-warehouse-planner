@@ -9,7 +9,13 @@ def test_stale_unassigned_order_reports_cancelled_status() -> None:
     shelf = eng._free_shelf()
     assert shelf is not None
     eng.orders.append(
-        Order(order_id="o_test", shelf_cell=shelf, created_tick=0, assigned_robot_id=None)
+        Order(
+            order_id="o_test",
+            shelf_cell=shelf,
+            created_tick=0,
+            assigned_robot_id=None,
+            unassigned_since_tick=0,
+        )
     )
     eng.tick = 100
     eng._cancel_stale_unassigned_orders()

@@ -21,7 +21,7 @@ def _available_robots(robots: list[Robot]) -> list[Robot]:
 
 
 def _pending_orders(orders: list[Order]) -> list[Order]:
-    return [o for o in orders if o.completed_tick is None and o.assigned_robot_id is None]
+    return [o for o in orders if o.is_open() and o.assigned_robot_id is None]
 
 
 def _nearest_charger_dist(grid: Grid, from_cell: Coord) -> int:

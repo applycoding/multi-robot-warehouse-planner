@@ -32,7 +32,7 @@ def test_battery_drain_and_charge() -> None:
         if eng2.robots[0].battery_pct >= 100.0:
             break
     assert eng2.robots[0].battery_pct >= 90.0
-    assert eng2.robots[0].status in ("idle", "moving", "to_parking")
+    assert eng2.robots[0].status in ("idle", "moving")
 
 
 def test_order_lifecycle() -> None:

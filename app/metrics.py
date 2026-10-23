@@ -42,15 +42,18 @@ class MetricsCollector:
         self.last_soc = last_soc
 
     def throughput_per_min(self, current_tick: int) -> float:
-        if not self.completion_ticks:
+        """Orders per simulated minute over the last 120 ticks (sliding window only)."""
+        if not self.completion_ticks or current_tick <= 0:
             return 0.0
-        window_ticks = min(120, current_tick) if current_tick > 0 else 1
+        window_ticks = min(120, current_tick)
         window_start = current_tick - window_ticks
         count = sum(1 for t in self.completion_ticks if t > window_start)
-        if count == 0 and self.throughput_total > 0:
-            count = self.throughput_total
-            window_ticks = max(current_tick, 1)
         return count * (120.0 / window_ticks) * 2.0
+
+    def throughput_per_min_cumulative(self, current_tick: int) -> float:
+        if current_tick <= 0 or self.throughput_total == 0:
+            return 0.0
+        return self.throughput_total * (120.0 / current_tick) * 2.0
 
     def planning_time_p95_ms(self) -> float:
         if not self.planning_times:
@@ -62,6 +65,9 @@ class MetricsCollector:
     def snapshot(self, current_tick: int) -> dict:
         return {
             "throughput_per_min": round(self.throughput_per_min(current_tick), 2),
+            "throughput_per_min_cumulative": round(
+                self.throughput_per_min_cumulative(current_tick), 2
+            ),
             "throughput_total": self.throughput_total,
             "last_makespan": self.last_makespan,
             "last_soc": self.last_soc,

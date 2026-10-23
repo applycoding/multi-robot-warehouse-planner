@@ -93,6 +93,7 @@ function render(frame) {
 function updateMetrics(m) {
   const keys = [
     "throughput_per_min",
+    "throughput_per_min_cumulative",
     "last_makespan",
     "last_soc",
     "conflicts_resolved",

@@ -138,7 +138,7 @@ def space_time_astar(
                 and wait_run.get(state, 0) + 1 > max_consecutive_wait
             ):
                 continue
-            ng = g + (0 if nxt == cell else 1)
+            ng = g + (0 if nxt == cell and cell == goal else 1)
             nstate = (nxt, nk)
             if nstate in closed:
                 continue
@@ -155,12 +155,14 @@ def space_time_astar(
 
 
 def path_soc(path: list[Coord], goal: Coord) -> int:
-    """Arrival offset: index where goal is reached and never left."""
-    last_goal = -1
+    """Arrival offset: first index where goal is reached and held to path end."""
+    for i, c in enumerate(path):
+        if c == goal and all(path[j] == goal for j in range(i, len(path))):
+            return i
     for i, c in enumerate(path):
         if c == goal:
-            last_goal = i
-    return last_goal if last_goal >= 0 else 0
+            return i
+    return 0
 
 
 def extend_paths_to_horizon(paths: dict[str, list[Coord]], horizon: int) -> dict[str, list[Coord]]:

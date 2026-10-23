@@ -13,7 +13,6 @@ def test_validate_step_allows_dead_robot_to_stay_on_its_cell() -> None:
 def test_dead_robot_does_not_block_other_robot_from_working() -> None:
     eng = SimulationEngine(seed=1, auto_orders=False, robot_count=2)
     eng.debug_set_battery("r1", 0.0)
-    other_start = eng.robots[1].position
     eng.enqueue(Command("add_order", {}))
     for _ in range(300):
         eng.step()

@@ -138,6 +138,7 @@ class Order:
     picked_tick: int | None = None
     completed_tick: int | None = None
     cancelled_tick: int | None = None
+    unassigned_since_tick: int | None = None
     pick_station: Coord | None = None
 
     def is_open(self) -> bool:

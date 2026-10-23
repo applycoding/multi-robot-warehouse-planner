@@ -17,7 +17,6 @@ def test_dead_robot_does_not_block_other_robot_from_working() -> None:
     eng.enqueue(Command("add_order", {}))
     for _ in range(300):
         eng.step()
-    other = eng.robots[1]
-    delivered = any(o.picked_tick is not None for o in eng.orders)
-    moved = other.position != other_start
-    assert delivered or moved
+    assert any(
+        o.completed_tick is not None and o.picked_tick is not None for o in eng.orders
+    )

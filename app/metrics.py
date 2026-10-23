@@ -18,6 +18,10 @@ class MetricsCollector:
         self.last_makespan = 0
         self.last_soc = 0
         self.last_completion_tick = 0
+        self.orders_cancelled_total = 0
+
+    def record_cancellation(self) -> None:
+        self.orders_cancelled_total += 1
 
     def record_completion(self, tick: int) -> None:
         self.throughput_total += 1
@@ -81,6 +85,7 @@ class MetricsCollector:
             "planner_used_counts": dict(self.planner_used_counts),
             "stalls": self.stalls,
             "deadlocks": self.deadlocks,
+            "orders_cancelled_total": self.orders_cancelled_total,
         }
 
     def reset(self) -> None:

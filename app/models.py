@@ -122,6 +122,7 @@ class Robot:
     deadlock_recover_at: int | None = None
     recovery_grace_until: int = 0
     consecutive_wait_ticks: int = 0
+    dead_since_tick: int | None = None
     goal: Coord | None = None
     dwell_remaining: int = 0
     leg: str = "idle"
@@ -136,4 +137,8 @@ class Order:
     assigned_robot_id: str | None = None
     picked_tick: int | None = None
     completed_tick: int | None = None
+    cancelled_tick: int | None = None
     pick_station: Coord | None = None
+
+    def is_open(self) -> bool:
+        return self.completed_tick is None and self.cancelled_tick is None

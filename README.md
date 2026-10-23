@@ -72,7 +72,7 @@ flowchart LR
 
 ## How it works
 
-Each tick, the simulation may allocate pending orders, then runs a full joint replan through the planner chain: CBS (400 node cap, 45 to 65% of the replan budget), prioritized planning with several robot orderings (remaining budget), then HOLD if needed. Replans use an adaptive wall-clock budget (`0.3 s` at 4 robots, up to `0.94 s` at 12) so CBS can finish on busy maps; unit tests still use the fixed `0.3 s` default on small instances. Space-time A* respects vertex and edge constraints, including the goal-cell constraint fix for target conflicts, and stops at the first valid goal arrival. The engine executes one step of the committed plan and validates collisions before applying motion.
+Each tick, the simulation may allocate pending orders, then runs a full joint replan through the planner chain: CBS (400 node cap, 45 to 65% of the replan budget), prioritized planning with several robot orderings (remaining budget), then HOLD if needed. Replans use an adaptive wall-clock budget of `min(1.5 s, 0.3 s + 0.1 s × (n − 4))` (for example `0.3 s` at 4 robots and `1.1 s` at 12, capped at `1.5 s`) so CBS can finish on busy maps; unit tests still use the fixed `0.3 s` default on small instances. Space-time A* respects vertex and edge constraints, including the goal-cell constraint fix for target conflicts, and stops at the first valid goal arrival. The engine executes one step of the committed plan and validates collisions before applying motion.
 
 ## Tests
 

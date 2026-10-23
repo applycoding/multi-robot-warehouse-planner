@@ -251,8 +251,9 @@ class SimulationEngine:
             parking = cells_of_type(self.grid, CellType.PARKING)
             used = {r.position for r in self.robots}
             free = [p for p in parking if p not in used]
-            for i in range(len(self.robots), count):
-                pos = free[i - len(self.robots)] if i - len(self.robots) < len(free) else parking[0]
+            base = len(self.robots)
+            for j, i in enumerate(range(base, count)):
+                pos = free[j] if j < len(free) else parking[0]
                 self.robots.append(
                     Robot(
                         robot_id=f"r{i + 1}",
@@ -286,7 +287,7 @@ class SimulationEngine:
     def _is_stationary_for_planning(self, robot: Robot) -> bool:
         if robot.status in ("blocked", "deadlocked", "charging"):
             return True
-        if robot.dwell_remaining > 0 or robot.status == "dwelling":
+        if robot.dwell_remaining > 0:
             return True
         if (
             not robot.current_order_id
@@ -342,6 +343,8 @@ class SimulationEngine:
                     for o in self.orders:
                         if o.order_id == r.current_order_id:
                             o.assigned_robot_id = None
+                            o.pick_station = None
+                            o.picked_tick = None
                             r.current_order_id = None
                             break
                 pocket = self._nearest_parking(r.position, blocked)
@@ -598,6 +601,8 @@ class SimulationEngine:
                         for o in self.orders:
                             if o.order_id == r.current_order_id:
                                 o.assigned_robot_id = None
+                                o.pick_station = None
+                                o.picked_tick = None
                                 break
                         r.current_order_id = None
                     r.ticks_without_progress = 0
@@ -629,6 +634,13 @@ class SimulationEngine:
         else:
             for r in self.robots:
                 r.waited_this_tick = False
+                if (
+                    r.leg == "to_shelf"
+                    and r.current_order_id
+                    and r.position == r.goal
+                    and r.dwell_remaining == 0
+                ):
+                    self._on_dwell_complete(r)
                 if r.dwell_remaining > 0:
                     r.dwell_remaining -= 1
                     if r.dwell_remaining == 0:
@@ -708,10 +720,14 @@ class SimulationEngine:
             if st:
                 r.goal = st
                 r.leg = "to_station"
+                r.status = "moving"
                 for o in self.orders:
                     if o.order_id == r.current_order_id:
                         o.pick_station = st
                         o.picked_tick = self.tick
+                self._replan_queued = True
+            else:
+                r.status = "idle"
                 self._replan_queued = True
         elif r.leg == "to_station" and r.current_order_id:
             for o in self.orders:

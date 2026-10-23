@@ -12,7 +12,6 @@ def brute_force_soc(
     max_depth: int = 14,
     allow_wait: bool = True,
     max_consecutive_wait: int | None = None,
-    witness_paths: dict[str, list[Coord]] | None = None,
 ) -> int | None:
     ids = sorted(agents.keys())
     starts = {a: agents[a][0] for a in ids}
@@ -27,13 +26,13 @@ def brute_force_soc(
             moves[a] = opts
         stacks = [moves[a] for a in ids]
 
-        def rec(i: int, nxt: list[Coord | None]):
-            if i == len(ids):
+        def rec(agen_idx: int, nxt: list[Coord | None]):
+            if agen_idx == len(ids):
                 yield dict(zip(ids, nxt, strict=True))
                 return
-            for c in stacks[i]:
-                nxt[i] = c
-                yield from rec(i + 1, nxt)
+            for c in stacks[agen_idx]:
+                nxt[agen_idx] = c
+                yield from rec(agen_idx + 1, nxt)
 
         for npos in rec(0, [None] * len(ids)):
             cells = list(npos.values())
@@ -43,8 +42,8 @@ def brute_force_soc(
             for a in ids:
                 if abs(npos[a][0] - state[a][0]) + abs(npos[a][1] - state[a][1]) > 1:
                     ok = False
-            for i, a in enumerate(ids):
-                for b in ids[i + 1 :]:
+            for ai, a in enumerate(ids):
+                for b in ids[ai + 1 :]:
                     if (
                         npos[a] == state[b]
                         and npos[b] == state[a]
@@ -54,13 +53,28 @@ def brute_force_soc(
             if ok:
                 yield npos
 
+    def arrival_signature(hist: list[dict[str, Coord]]) -> tuple[tuple[str, int], ...]:
+        parts: list[tuple[str, int]] = []
+        for a in ids:
+            path = [step[a] for step in hist]
+            g = goals[a]
+            arr = -1
+            for i, c in enumerate(path):
+                if c == g and all(path[j] == g for j in range(i, len(path))):
+                    arr = i
+                    break
+            parts.append((a, arr))
+        return tuple(parts)
+
     best: int | None = None
     q: deque[tuple[dict[str, Coord], list[dict[str, Coord]], dict[str, int]]] = deque()
     q.append((starts, [starts], {a: 0 for a in ids}))
-    seen: set[tuple[int, tuple[tuple[str, Coord], ...]]] = set()
+    seen: set[
+        tuple[int, tuple[tuple[str, Coord], ...], tuple[tuple[str, int], ...]]
+    ] = set()
     while q:
         state, hist, wait_run = q.popleft()
-        key = (len(hist), tuple(sorted(state.items())))
+        key = (len(hist), tuple(sorted(state.items())), arrival_signature(hist))
         if key in seen:
             continue
         seen.add(key)
@@ -87,11 +101,4 @@ def brute_force_soc(
             if invalid:
                 continue
             q.append((npos, hist + [npos], new_wait))
-    if witness_paths is not None:
-        from app.planner.validate import validate_joint_plan
-
-        if not validate_joint_plan(grid, witness_paths):
-            w_soc = sum(path_soc(witness_paths[a], goals[a]) for a in ids)
-            if best is None or w_soc < best:
-                best = w_soc
     return best

@@ -138,6 +138,7 @@ class SimulationEngine:
                             order_id=self._next_order_id(),
                             shelf_cell=shelf,
                             created_tick=self.tick,
+                            unassigned_since_tick=self.tick,
                         )
                     )
                     self._replan_queued = True
@@ -244,7 +245,7 @@ class SimulationEngine:
                 if r.current_order_id:
                     for o in self.orders:
                         if o.order_id == r.current_order_id and o.completed_tick is None:
-                            o.assigned_robot_id = None
+                            self._unassign_order(o)
                             break
             self.robots = self.robots[:count]
         else:
@@ -341,9 +342,7 @@ class SimulationEngine:
                 if r.current_order_id:
                     for o in self.orders:
                         if o.order_id == r.current_order_id:
-                            o.assigned_robot_id = None
-                            o.pick_station = None
-                            o.picked_tick = None
+                            self._unassign_order(o)
                             r.current_order_id = None
                             break
                 pocket = self._nearest_parking(r.position, blocked)
@@ -378,6 +377,7 @@ class SimulationEngine:
             for o in self.orders:
                 if o.order_id == order_id:
                     o.assigned_robot_id = robot_id
+                    o.unassigned_since_tick = None
                     for r in self.robots:
                         if r.robot_id == robot_id:
                             r.current_order_id = order_id
@@ -467,11 +467,19 @@ class SimulationEngine:
             r.goal = pk
         self._replan_queued = True
 
+    def _unassign_order(self, order: Order) -> None:
+        order.assigned_robot_id = None
+        order.pick_station = None
+        order.picked_tick = None
+        order.unassigned_since_tick = self.tick
+
     def _cancel_stale_unassigned_orders(self) -> None:
         for o in self.orders:
             if not o.is_open() or o.assigned_robot_id is not None:
                 continue
-            if self.tick - o.created_tick < 80:
+            if o.unassigned_since_tick is None:
+                continue
+            if self.tick - o.unassigned_since_tick < 80:
                 continue
             o.cancelled_tick = self.tick
             self.metrics.record_cancellation()
@@ -488,9 +496,7 @@ class SimulationEngine:
                 continue
             for o in self.orders:
                 if o.order_id == r.current_order_id:
-                    o.assigned_robot_id = None
-                    o.pick_station = None
-                    o.picked_tick = None
+                    self._unassign_order(o)
                     break
             r.current_order_id = None
             r.stall_attempts = 0
@@ -524,9 +530,7 @@ class SimulationEngine:
                 continue
             for o in self.orders:
                 if o.order_id == r.current_order_id:
-                    o.assigned_robot_id = None
-                    o.pick_station = None
-                    o.picked_tick = None
+                    self._unassign_order(o)
                     break
             r.current_order_id = None
             r.stall_attempts = 0
@@ -795,9 +799,7 @@ class SimulationEngine:
                     if r.current_order_id:
                         for o in self.orders:
                             if o.order_id == r.current_order_id:
-                                o.assigned_robot_id = None
-                                o.pick_station = None
-                                o.picked_tick = None
+                                self._unassign_order(o)
                                 break
                         r.current_order_id = None
                     r.ticks_without_progress = 0
@@ -811,7 +813,6 @@ class SimulationEngine:
         for r in self.robots:
             self._finish_charging_if_ready(r)
         self._release_stale_order_assignments()
-        self._cancel_stale_unassigned_orders()
         self._fleet_unfreeze_watchdog()
 
         pending = [
@@ -822,6 +823,8 @@ class SimulationEngine:
             for r in self.robots
         ):
             self._run_allocation()
+
+        self._cancel_stale_unassigned_orders()
 
         if self._replan_queued:
             self._replan()
@@ -933,6 +936,7 @@ class SimulationEngine:
                             order_id=self._next_order_id(),
                             shelf_cell=shelf,
                             created_tick=self.tick,
+                            unassigned_since_tick=self.tick,
                         )
                     )
                     self._replan_queued = True

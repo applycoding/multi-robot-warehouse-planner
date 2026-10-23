@@ -119,6 +119,9 @@ class Robot:
     ticks_without_progress: int = 0
     hold_streak: int = 0
     stall_attempts: int = 0
+    deadlock_recover_at: int | None = None
+    recovery_grace_until: int = 0
+    consecutive_wait_ticks: int = 0
     goal: Coord | None = None
     dwell_remaining: int = 0
     leg: str = "idle"

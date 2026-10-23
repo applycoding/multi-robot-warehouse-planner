@@ -113,7 +113,7 @@ class SimulationEngine:
     def _targeted_shelves(self) -> set[Coord]:
         out: set[Coord] = set()
         for o in self.orders:
-            if o.completed_tick is None:
+            if o.is_open():
                 out.add(o.shelf_cell)
         return out
 
@@ -303,7 +303,6 @@ class SimulationEngine:
         for r in self.robots:
             if r.battery_pct <= 0 or r.status == "blocked":
                 blocked.add(r.position)
-                agents[r.robot_id] = (r.position, r.position)
                 continue
             if self._is_stationary_for_planning(r):
                 blocked.add(r.position)
@@ -412,6 +411,44 @@ class SimulationEngine:
     def _on_charger_cell(self, cell: Coord) -> bool:
         return self.grid.cell_types.get(cell) is CellType.CHARGER
 
+    def _rescue_depleted_robots(self) -> None:
+        """Simulation-only: after prolonged depletion, tow to a charger at partial charge."""
+        rescue_after_ticks = 120
+        chargers = cells_of_type(self.grid, CellType.CHARGER)
+        if not chargers:
+            return
+        occupied = {
+            rb.position for rb in self.robots if rb.battery_pct > 0 and rb.robot_id
+        }
+        for r in self.robots:
+            if r.battery_pct > 0:
+                r.dead_since_tick = None
+                continue
+            if r.dead_since_tick is None:
+                r.dead_since_tick = self.tick
+                continue
+            if self.tick - r.dead_since_tick < rescue_after_ticks:
+                continue
+            free_chargers = [ch for ch in chargers if ch not in occupied]
+            if not free_chargers:
+                continue
+            ch = min(
+                free_chargers,
+                key=lambda c: abs(c[0] - r.position[0]) + abs(c[1] - r.position[1]),
+            )
+            occupied.add(ch)
+            r.position = ch
+            r.battery_pct = 55.0
+            r.status = "charging"
+            r.leg = "charging"
+            r.goal = ch
+            r.dead_since_tick = None
+            r.stall_attempts = 0
+            r.ticks_without_progress = 0
+            r.hold_streak = 0
+            r.consecutive_wait_ticks = 0
+            self._replan_queued = True
+
     def _finish_charging_if_ready(self, r: Robot) -> None:
         if r.battery_pct < CHARGE_COMPLETE_THRESHOLD:
             return
@@ -432,11 +469,12 @@ class SimulationEngine:
 
     def _cancel_stale_unassigned_orders(self) -> None:
         for o in self.orders:
-            if o.completed_tick is not None or o.assigned_robot_id is not None:
+            if not o.is_open() or o.assigned_robot_id is not None:
                 continue
             if self.tick - o.created_tick < 80:
                 continue
-            o.completed_tick = self.tick
+            o.cancelled_tick = self.tick
+            self.metrics.record_cancellation()
             self._replan_queued = True
 
     def _fleet_unfreeze_watchdog(self) -> None:
@@ -565,7 +603,7 @@ class SimulationEngine:
         stations = cells_of_type(self.grid, CellType.PICK_STATION)
         used = set()
         for o in self.orders:
-            if o.pick_station and o.completed_tick is None:
+            if o.pick_station and o.is_open():
                 used.add(o.pick_station)
         for r in self.robots:
             if r.leg == "to_station" and r.goal:
@@ -674,11 +712,21 @@ class SimulationEngine:
 
     def _validate_step(self, nxt: dict[str, Coord]) -> bool:
         blocked = set(self.blocked_cells)
+        dead_positions: dict[str, Coord] = {}
         for r in self.robots:
-            if r.battery_pct <= 0:
-                blocked.add(r.position)
-        for rid, c in nxt.items():
-            if not self.grid.is_walkable(c) or c in blocked:
+            if r.battery_pct <= 0 or r.status == "blocked":
+                dead_positions[r.robot_id] = r.position
+        for r in self.robots:
+            c = nxt[r.robot_id]
+            if not self.grid.is_walkable(c):
+                return False
+            if c in blocked:
+                return False
+            if r.robot_id in dead_positions:
+                if c != r.position:
+                    return False
+                continue
+            if c in dead_positions.values():
                 return False
         cells = list(nxt.values())
         if len(cells) != len(set(cells)):
@@ -759,6 +807,7 @@ class SimulationEngine:
     def step(self) -> dict:
         self._apply_commands()
         self._recover_deadlocked_robots()
+        self._rescue_depleted_robots()
         for r in self.robots:
             self._finish_charging_if_ready(r)
         self._release_stale_order_assignments()
@@ -766,7 +815,7 @@ class SimulationEngine:
         self._fleet_unfreeze_watchdog()
 
         pending = [
-            o for o in self.orders if o.assigned_robot_id is None and o.completed_tick is None
+            o for o in self.orders if o.assigned_robot_id is None and o.is_open()
         ]
         if pending and any(
             r.current_order_id is None and r.status not in ("charging", "deadlocked", "blocked")
@@ -836,6 +885,8 @@ class SimulationEngine:
                         r.ticks_without_progress += 1
 
                 if r.battery_pct <= 0:
+                    if r.dead_since_tick is None:
+                        r.dead_since_tick = self.tick
                     if r.status != "blocked":
                         r.status = "blocked"
                         self._replan_queued = True
@@ -863,12 +914,12 @@ class SimulationEngine:
             active_assigned = sum(
                 1
                 for o in self.orders
-                if o.completed_tick is None and o.assigned_robot_id is not None
+                if o.is_open() and o.assigned_robot_id is not None
             )
             unassigned_open = sum(
                 1
                 for o in self.orders
-                if o.completed_tick is None and o.assigned_robot_id is None
+                if o.is_open() and o.assigned_robot_id is None
             )
             if (
                 active_assigned < self.robot_count
@@ -973,7 +1024,9 @@ class SimulationEngine:
     def _orders_payload(self) -> list[dict]:
         out = []
         for o in self.orders:
-            if o.completed_tick is not None:
+            if o.cancelled_tick is not None:
+                status = "cancelled"
+            elif o.completed_tick is not None:
                 status = "completed"
             elif o.assigned_robot_id:
                 status = "active"

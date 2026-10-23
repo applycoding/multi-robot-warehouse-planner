@@ -20,6 +20,7 @@ CPU-only simulation of a warehouse AMR fleet with multi-agent path finding (CBS 
 ## Known limitations
 
 - CBS falls back to prioritized planning (and then HOLD) around 10 to 12 robots on the default map; this is expected, not a defect.
+- A robot that reaches **0% battery** off a charger blocks its cell for other agents (they plan around it) but joint validation still allows the fleet to move. After **120 ticks** depleted, the simulation **rescues** the robot to the nearest charger at 55% charge (demo behavior, not a real tow). Low-battery routing starts at **40%**. Stale unassigned orders are **cancelled** (not counted as deliveries).
 - Robots are single-cell points on a grid (no footprint or clearance).
 - Blocking is user-triggered only (no sensor obstacles).
 

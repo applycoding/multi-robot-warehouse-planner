@@ -102,6 +102,7 @@ function updateMetrics(m) {
     "planner_used_counts",
     "stalls",
     "deadlocks",
+    "orders_cancelled_total",
   ];
   metricsEl.innerHTML = keys
     .map((k) => {
